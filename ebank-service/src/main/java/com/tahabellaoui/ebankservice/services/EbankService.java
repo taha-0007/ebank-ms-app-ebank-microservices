@@ -1,7 +1,9 @@
 package com.tahabellaoui.ebankservice.services;
 
 import com.tahabellaoui.ebankservice.entities.BankAccount;
+import com.tahabellaoui.ebankservice.model.Customer;
 import com.tahabellaoui.ebankservice.repository.BankAccountRepository;
+import com.tahabellaoui.ebankservice.feign.CustomerRestClient;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -11,31 +13,55 @@ import java.util.UUID;
 @Service
 public class EbankService {
 
-    // Injection du Repository
-    private BankAccountRepository accountRepository;
+    private final BankAccountRepository accountRepository;
+    private final CustomerRestClient customerRestClient;
 
-    // Constructeur pour l'injection de dépendance
-    public EbankService(BankAccountRepository accountRepository) {
+    // Injection via le constructeur
+    public EbankService(BankAccountRepository accountRepository, CustomerRestClient customerRestClient) {
         this.accountRepository = accountRepository;
+        this.customerRestClient = customerRestClient;
     }
 
-    // Méthode pour récupérer tous les comptes
     public List<BankAccount> getAllBankAccounts() {
-        return accountRepository.findAll();
+        List<BankAccount> bankAccounts = accountRepository.findAll();
+
+        bankAccounts.forEach(bankAccount -> {
+            try {
+                bankAccount.setCustomer(
+                        customerRestClient.getCustomerById(bankAccount.getCustomerId())
+                );
+            } catch (Exception e) {
+                // Au cas où le customer-service est éteint, on affiche un client par défaut
+                bankAccount.setCustomer(new Customer(bankAccount.getCustomerId(), "Not available", "Not available"));
+            }
+        });
+
+        return bankAccounts;
     }
 
-    // Méthode pour récupérer un compte par son ID
     public BankAccount getBankAccountById(String id) {
-        return accountRepository.findById(id)
+        // ⚠️ C'est ICI que l'on déclare la variable "bankAccount"
+        BankAccount bankAccount = accountRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        // Maintenant on peut l'utiliser pour appeler le client Feign
+        bankAccount.setCustomer(
+                customerRestClient.getCustomerById(bankAccount.getCustomerId())
+        );
+
+        return bankAccount;
     }
-
-    // Méthode pour sauvegarder un compte (Mise à jour selon la capture)
     public BankAccount save(BankAccount bankAccount) {
-        // ⚠️ AJOUTS ICI :
-        bankAccount.setId(UUID.randomUUID().toString());
-        bankAccount.setCreatedAt(new Date());
+        try {
+            Customer customer = customerRestClient.getCustomerById(bankAccount.getCustomerId());
 
-        return accountRepository.save(bankAccount);
+            bankAccount.setId(UUID.randomUUID().toString());
+            bankAccount.setCreatedAt(new Date());
+
+            return accountRepository.save(bankAccount);
+
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
     }
 }
