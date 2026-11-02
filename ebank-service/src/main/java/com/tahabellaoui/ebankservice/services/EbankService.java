@@ -4,6 +4,8 @@ import com.tahabellaoui.ebankservice.entities.BankAccount;
 import com.tahabellaoui.ebankservice.model.Customer;
 import com.tahabellaoui.ebankservice.repository.BankAccountRepository;
 import com.tahabellaoui.ebankservice.feign.CustomerRestClient;
+import org.springframework.ai.mcp.annotation.McpTool;       // <-- IMPORT AJOUTÉ
+import org.springframework.ai.mcp.annotation.McpToolParam;    // <-- IMPORT AJOUTÉ
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -16,12 +18,12 @@ public class EbankService {
     private final BankAccountRepository accountRepository;
     private final CustomerRestClient customerRestClient;
 
-    // Injection via le constructeur
     public EbankService(BankAccountRepository accountRepository, CustomerRestClient customerRestClient) {
         this.accountRepository = accountRepository;
         this.customerRestClient = customerRestClient;
     }
 
+    @McpTool(description = "Get all Bank accounts")
     public List<BankAccount> getAllBankAccounts() {
         List<BankAccount> bankAccounts = accountRepository.findAll();
 
@@ -31,7 +33,7 @@ public class EbankService {
                         customerRestClient.getCustomerById(bankAccount.getCustomerId())
                 );
             } catch (Exception e) {
-                // Au cas où le customer-service est éteint, on affiche un client par défaut
+                // Fallback si le customer-service est éteint
                 bankAccount.setCustomer(new Customer(bankAccount.getCustomerId(), "Not available", "Not available"));
             }
         });
@@ -39,19 +41,21 @@ public class EbankService {
         return bankAccounts;
     }
 
+    @McpTool(description = "Get a bank account by id")
     public BankAccount getBankAccountById(String id) {
-        // ⚠️ C'est ICI que l'on déclare la variable "bankAccount"
         BankAccount bankAccount = accountRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
 
-        // Maintenant on peut l'utiliser pour appeler le client Feign
         bankAccount.setCustomer(
                 customerRestClient.getCustomerById(bankAccount.getCustomerId())
         );
 
         return bankAccount;
     }
-    public BankAccount save(BankAccount bankAccount) {
+
+    @McpTool(description = "Save a new bank Account")
+    public BankAccount save(
+            @McpToolParam(description = "The bank account to save (balance, type, customerId)") BankAccount bankAccount) {
         try {
             Customer customer = customerRestClient.getCustomerById(bankAccount.getCustomerId());
 
